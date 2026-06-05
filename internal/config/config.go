@@ -1,0 +1,38 @@
+package config
+
+import (
+	"fmt"
+
+	"github.com/inhuman/config"
+)
+
+type Config struct {
+	Transport string `env:"MCP_K8S_TRANSPORT" env-default:"stdio"`
+	Addr      string `env:"MCP_K8S_ADDR" env-default:":8080"`
+	Namespace string `env:"MCP_K8S_NAMESPACE" env-default:"jarvis-ephemeral"`
+
+	DefaultTimeoutS int `env:"MCP_K8S_DEFAULT_TIMEOUT_S" env-default:"60"`
+	MaxTimeoutS     int `env:"MCP_K8S_MAX_TIMEOUT_S" env-default:"600"`
+
+	MaxOutputBytes   int64 `env:"MCP_K8S_MAX_OUTPUT_BYTES" env-default:"1048576"`
+	MaxArtifactBytes int64 `env:"MCP_K8S_MAX_ARTIFACT_BYTES" env-default:"10485760"`
+
+	DefaultCPU    string `env:"MCP_K8S_DEFAULT_CPU" env-default:"1"`
+	DefaultMemory string `env:"MCP_K8S_DEFAULT_MEMORY" env-default:"512Mi"`
+
+	MaxConcurrent int `env:"MCP_K8S_MAX_CONCURRENT" env-default:"10"`
+
+	AllowedImages []string `env:"MCP_K8S_ALLOWED_IMAGES" env-separator:","`
+	SidecarImage  string   `env:"MCP_K8S_SIDECAR_IMAGE" env-default:"busybox:1.36"`
+
+	Kubeconfig string `env:"MCP_K8S_KUBECONFIG"`
+	AuthToken  string `env:"MCP_K8S_AUTH_TOKEN" mask:"filled"`
+}
+
+func Load() (Config, error) {
+	var c Config
+	if err := config.Load(&c); err != nil {
+		return Config{}, fmt.Errorf("load config: %w", err)
+	}
+	return c, nil
+}

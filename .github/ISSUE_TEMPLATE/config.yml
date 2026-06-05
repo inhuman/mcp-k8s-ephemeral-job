@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the README first
+    url: https://github.com/inhuman/mcp-k8s-ephemeral-job/blob/main/README.md
+    about: The run_job tool contract, transports, env vars and the security model live here.
+  - name: Security model & quickstart
+    url: https://github.com/inhuman/mcp-k8s-ephemeral-job/blob/main/specs/001-run-job-ephemeral-pod/quickstart.md
+    about: How to run safely (namespace-scoped RBAC, quotas, allowlist) and the full env-var list.
