@@ -33,9 +33,13 @@ type ResourceLimits struct {
 }
 
 type Output struct {
-	ExitCode   int        `json:"exit_code"`
-	Stdout     string     `json:"stdout"`
-	Stderr     string     `json:"stderr"`
+	ExitCode int `json:"exit_code"`
+	// Stdout carries the container's COMBINED stdout+stderr: Kubernetes pod logs
+	// merge the two streams and do not expose them separately.
+	Stdout string `json:"stdout" jsonschema:"combined stdout+stderr from the container (Kubernetes merges the streams in pod logs)"`
+	// Stderr is reserved and always empty — see Stdout. Kept for forward
+	// compatibility so adding stream separation later is not a breaking change.
+	Stderr     string     `json:"stderr" jsonschema:"reserved, always empty; Kubernetes pod logs do not separate stderr — read everything from stdout"`
 	DurationMS int64      `json:"duration_ms"`
 	Status     string     `json:"status"`
 	Artifacts  []Artifact `json:"artifacts"`

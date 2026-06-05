@@ -156,13 +156,20 @@ func (k *K8s) collect(ctx context.Context, podName, workdir string, exitCode int
 	res.Stdout = stdout
 	res.TruncStdout = truncOut
 
-	var tarBuf bytes.Buffer
-	if err := k.exec(ctx, podName, manifest.ReaderSidecar,
-		[]string{"tar", "cf", "-", "-C", workdir, "."}, nil, &tarBuf, io.Discard); err != nil {
-		k.log.Warn("collect artifacts failed", zap.Error(err))
-		return res, nil
-	}
-	files, truncArt, err := artifacts.CollectFromTar(&tarBuf, k.maxArtifact, manifest.ReadySentinel)
+	// Stream the work-dir tar through a pipe and cap it WHILE reading, so a large
+	// /work (emptyDir can be gigabytes) can't buffer wholesale into the server's
+	// RAM before maxArtifact applies. CollectFromTar reads at most maxArtifact.
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		execErr := k.exec(ctx, podName, manifest.ReaderSidecar,
+			[]string{"tar", "cf", "-", "-C", workdir, "."}, nil, pw, io.Discard)
+		pw.CloseWithError(execErr)
+		done <- execErr
+	}()
+	files, truncArt, err := artifacts.CollectFromTar(pr, k.maxArtifact, manifest.ReadySentinel)
+	pr.Close() // unblock the tar writer if we stopped early at the cap
+	<-done     // let the exec goroutine finish
 	if err != nil {
 		k.log.Warn("parse artifacts failed", zap.Error(err))
 		return res, nil
@@ -190,6 +197,8 @@ func (k *K8s) injectFiles(ctx context.Context, podName string, spec Spec) error 
 	return nil
 }
 
+// podLogs returns the main container's logs — the COMBINED stdout+stderr stream
+// (Kubernetes pod logs do not separate the two). Surfaced via Output.Stdout.
 func (k *K8s) podLogs(ctx context.Context, podName string) ([]byte, bool, error) {
 	stream, err := k.cs.CoreV1().Pods(k.ns).
 		GetLogs(podName, &corev1.PodLogOptions{Container: manifest.MainContainer}).Stream(ctx)
