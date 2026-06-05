@@ -1,0 +1,14 @@
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+.specify/
+specs/
+*.md
+!README.md
+mcp-k8s-ephemeral-job
+*.test
+*.out
+coverage.*
+.env*
