@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/inhuman/mcp-k8s-ephemeral-job/internal/executor"
@@ -33,8 +34,22 @@ func NewTool(exec executor.Executor, opts Options, log *zap.Logger) *Tool {
 func (t *Tool) Register(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "run_job",
-		Description: "Synchronously run a command in an ephemeral Kubernetes pod and return exit code, output and artifacts.",
+		Description: t.description(),
 	}, t.handle)
+}
+
+// description builds the run_job tool description, enumerating the exact allowed
+// images so the model copies one verbatim (the allowlist is an exact match, and
+// the proxy-prefixed strings are not guessable).
+func (t *Tool) description() string {
+	d := "Synchronously run a command in an ephemeral Kubernetes pod and return exit code, output and artifacts. " +
+		"The `image` MUST be one of the allowed images below, copied EXACTLY."
+	if len(t.opts.AllowedImages) > 0 {
+		d += " Allowed images: " + strings.Join(t.opts.AllowedImages, ", ") + "."
+	} else {
+		d += " No images are currently allowed — the tool will reject every call until the operator configures an allowlist."
+	}
+	return d
 }
 
 func (t *Tool) handle(ctx context.Context, _ *mcp.CallToolRequest, in Input) (*mcp.CallToolResult, Output, error) {

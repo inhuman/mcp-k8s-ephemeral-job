@@ -27,7 +27,7 @@ func TestValidate(t *testing.T) {
 		{
 			name:    "image not allowed",
 			in:      runjob.Input{Image: "evil:latest", Command: []string{"echo"}},
-			wantErr: "allowlist",
+			wantErr: "is not allowed",
 		},
 		{
 			name:    "empty command",

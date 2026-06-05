@@ -16,7 +16,8 @@ func Validate(in Input, allowed []string, maxTimeoutS int) error {
 		return fmt.Errorf("image is required")
 	}
 	if !slices.Contains(allowed, in.Image) {
-		return fmt.Errorf("image %q is not in the allowlist", in.Image)
+		return fmt.Errorf("image %q is not allowed; use one of the allowed images exactly: %s",
+			in.Image, strings.Join(allowed, ", "))
 	}
 	if len(in.Command) == 0 {
 		return fmt.Errorf("command is required")
