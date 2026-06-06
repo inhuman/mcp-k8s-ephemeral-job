@@ -109,3 +109,29 @@ func TestImageResolver(t *testing.T) {
 		t.Errorf("Names() = %v, want [busybox python]", names)
 	}
 }
+
+func TestImageResolverMultipleVersions(t *testing.T) {
+	r := runjob.NewImageResolver([]string{
+		"docker-proxy.t1.cloud/library/busybox:1.36",
+		"docker-proxy.t1.cloud/library/busybox:1.35",
+	})
+	// Bare base name → the FIRST listed (default), not silently shadowed.
+	if got, _ := r.Resolve("busybox"); got != "docker-proxy.t1.cloud/library/busybox:1.36" {
+		t.Errorf("Resolve(busybox) = %q, want :1.36 default", got)
+	}
+	// Exact version → that exact one.
+	if got, _ := r.Resolve("busybox:1.35"); got != "docker-proxy.t1.cloud/library/busybox:1.35" {
+		t.Errorf("Resolve(busybox:1.35) = %q, want :1.35", got)
+	}
+	if got, _ := r.Resolve("busybox:1.36"); got != "docker-proxy.t1.cloud/library/busybox:1.36" {
+		t.Errorf("Resolve(busybox:1.36) = %q, want :1.36", got)
+	}
+	// Unknown version → fall back to the base default, still runs.
+	if got, ok := r.Resolve("busybox:9.9"); !ok || got != "docker-proxy.t1.cloud/library/busybox:1.36" {
+		t.Errorf("Resolve(busybox:9.9) = (%q,%v), want :1.36 default", got, ok)
+	}
+	// Both versions are visible in the description (no silent shadowing).
+	if names := r.Names(); len(names) != 2 || names[0] != "busybox:1.35" || names[1] != "busybox:1.36" {
+		t.Errorf("Names() = %v, want [busybox:1.35 busybox:1.36]", names)
+	}
+}
