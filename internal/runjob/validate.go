@@ -3,21 +3,21 @@ package runjob
 import (
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 )
 
 var envKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // Validate проверяет аргументы run_job до спавна (FR-002, FR-016).
-// allowed — строгий allowlist образов: пустой запрещает любой запуск.
-func Validate(in Input, allowed []string, maxTimeoutS int) error {
+// resolver maps the requested image to an allowed pullable ref; an empty
+// allowlist resolves nothing, so every call is rejected.
+func Validate(in Input, resolver *ImageResolver, maxTimeoutS int) error {
 	if strings.TrimSpace(in.Image) == "" {
 		return fmt.Errorf("image is required")
 	}
-	if !slices.Contains(allowed, in.Image) {
-		return fmt.Errorf("image %q is not allowed; use one of the allowed images exactly: %s",
-			in.Image, strings.Join(allowed, ", "))
+	if _, ok := resolver.Resolve(in.Image); !ok {
+		return fmt.Errorf("image %q is not available; use one of: %s",
+			in.Image, strings.Join(resolver.Names(), ", "))
 	}
 	if len(in.Command) == 0 {
 		return fmt.Errorf("command is required")

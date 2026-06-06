@@ -8,7 +8,7 @@ import (
 )
 
 func TestValidate(t *testing.T) {
-	allowed := []string{"python:3.12-slim", "golang:1.26"}
+	resolver := runjob.NewImageResolver([]string{"python:3.12-slim", "golang:1.26"})
 
 	tests := []struct {
 		name    string
@@ -27,7 +27,7 @@ func TestValidate(t *testing.T) {
 		{
 			name:    "image not allowed",
 			in:      runjob.Input{Image: "evil:latest", Command: []string{"echo"}},
-			wantErr: "is not allowed",
+			wantErr: "is not available",
 		},
 		{
 			name:    "empty command",
@@ -58,7 +58,7 @@ func TestValidate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := runjob.Validate(tc.in, allowed, 600)
+			err := runjob.Validate(tc.in, resolver, 600)
 			if tc.wantErr == "" {
 				if err != nil {
 					t.Fatalf("want nil, got %v", err)
@@ -75,9 +75,37 @@ func TestValidate(t *testing.T) {
 func TestValidateEmptyAllowlistDeniesAll(t *testing.T) {
 	err := runjob.Validate(
 		runjob.Input{Image: "python:3.12-slim", Command: []string{"python"}},
-		nil, 600,
+		runjob.NewImageResolver(nil), 600,
 	)
 	if err == nil {
 		t.Fatal("empty allowlist must deny any image")
+	}
+}
+
+func TestImageResolver(t *testing.T) {
+	r := runjob.NewImageResolver([]string{
+		"docker-proxy.t1.cloud/library/busybox:1.36",
+		"docker-proxy.t1.cloud/library/python:3.13-slim",
+	})
+	cases := map[string]string{
+		"busybox":                          "docker-proxy.t1.cloud/library/busybox:1.36",
+		"busybox:latest":                   "docker-proxy.t1.cloud/library/busybox:1.36",
+		"busybox:1.35":                     "docker-proxy.t1.cloud/library/busybox:1.36", // tag ignored
+		"docker.io/library/busybox":        "docker-proxy.t1.cloud/library/busybox:1.36",
+		"python":                           "docker-proxy.t1.cloud/library/python:3.13-slim",
+		"python:3.11-slim":                 "docker-proxy.t1.cloud/library/python:3.13-slim",
+		"BusyBox":                          "docker-proxy.t1.cloud/library/busybox:1.36", // case-insensitive
+	}
+	for req, want := range cases {
+		got, ok := r.Resolve(req)
+		if !ok || got != want {
+			t.Errorf("Resolve(%q) = (%q, %v), want (%q, true)", req, got, ok, want)
+		}
+	}
+	if _, ok := r.Resolve("alpine"); ok {
+		t.Error("alpine must not resolve (not in allowlist)")
+	}
+	if names := r.Names(); len(names) != 2 || names[0] != "busybox" || names[1] != "python" {
+		t.Errorf("Names() = %v, want [busybox python]", names)
 	}
 }

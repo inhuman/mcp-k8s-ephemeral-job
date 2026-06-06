@@ -21,13 +21,14 @@ type Options struct {
 }
 
 type Tool struct {
-	exec executor.Executor
-	opts Options
-	log  *zap.Logger
+	exec     executor.Executor
+	opts     Options
+	resolver *ImageResolver
+	log      *zap.Logger
 }
 
 func NewTool(exec executor.Executor, opts Options, log *zap.Logger) *Tool {
-	return &Tool{exec: exec, opts: opts, log: log}
+	return &Tool{exec: exec, opts: opts, resolver: NewImageResolver(opts.AllowedImages), log: log}
 }
 
 // Register добавляет тул run_job на сервер. Схема in/out выводится из типов Input/Output (Принцип III).
@@ -38,16 +39,16 @@ func (t *Tool) Register(s *mcp.Server) {
 	}, t.handle)
 }
 
-// description builds the run_job tool description, enumerating the exact allowed
-// images so the model copies one verbatim (the allowlist is an exact match, and
-// the proxy-prefixed strings are not guessable).
+// description builds the run_job tool description, listing the friendly image
+// names the caller may use. The server resolves the name to an exact pullable
+// ref, so the caller passes a short name (e.g. "busybox"), not a registry path.
 func (t *Tool) description() string {
 	d := "Synchronously run a command in an ephemeral Kubernetes pod and return exit code, output and artifacts. " +
-		"The `image` MUST be one of the allowed images below, copied EXACTLY."
-	if len(t.opts.AllowedImages) > 0 {
-		d += " Allowed images: " + strings.Join(t.opts.AllowedImages, ", ") + "."
+		"Set `image` to one of the available names (a tag is optional and ignored — the server picks the allowed version)."
+	if names := t.resolver.Names(); len(names) > 0 {
+		d += " Available images: " + strings.Join(names, ", ") + "."
 	} else {
-		d += " No images are currently allowed — the tool will reject every call until the operator configures an allowlist."
+		d += " No images are currently available — the tool will reject every call until the operator configures an allowlist."
 	}
 	return d
 }
@@ -64,9 +65,12 @@ func (t *Tool) handle(ctx context.Context, _ *mcp.CallToolRequest, in Input) (*m
 // Ошибка возвращается только для невалидного входа/сбоя исполнителя; неуспешный прогон
 // (status=failed/timeout/error) — это валидный Output с соответствующим статусом.
 func (t *Tool) Execute(ctx context.Context, in Input) (Output, error) {
-	if err := Validate(in, t.opts.AllowedImages, t.opts.MaxTimeoutS); err != nil {
+	if err := Validate(in, t.resolver, t.opts.MaxTimeoutS); err != nil {
 		return Output{}, fmt.Errorf("invalid arguments: %w", err)
 	}
+	// Resolve the caller's image name to the exact allowed pullable ref; the pod
+	// always runs the allowed ref, never the caller's raw string.
+	image, _ := t.resolver.Resolve(in.Image)
 
 	limits, err := ResolveLimits(in.Limits, t.opts.DefaultCPU, t.opts.DefaultMemory)
 	if err != nil {
@@ -84,7 +88,7 @@ func (t *Tool) Execute(ctx context.Context, in Input) (Output, error) {
 	}
 
 	spec := executor.Spec{
-		Image:   in.Image,
+		Image:   image,
 		Command: in.Command,
 		Env:     in.Env,
 		Files:   files,
