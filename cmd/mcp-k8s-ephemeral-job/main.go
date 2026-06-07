@@ -44,6 +44,8 @@ func run(log *zap.Logger) error {
 		Kubeconfig:   cfg.Kubeconfig,
 		Namespace:    cfg.Namespace,
 		SidecarImage: cfg.SidecarImage,
+		CloneImage:   cfg.CloneImage,
+		CloneSecret:  cfg.CloneSecret,
 		TTLSeconds:   jobTTLSeconds,
 		MaxOutput:    cfg.MaxOutputBytes,
 		MaxArtifact:  cfg.MaxArtifactBytes,

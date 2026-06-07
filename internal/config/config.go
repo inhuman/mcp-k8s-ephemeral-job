@@ -25,6 +25,12 @@ type Config struct {
 	AllowedImages []string `env:"MCP_K8S_ALLOWED_IMAGES" env-separator:","`
 	SidecarImage  string   `env:"MCP_K8S_SIDECAR_IMAGE" env-default:"busybox:1.36"`
 
+	// git-clone init-container: образ с git и k8s-секрет с ключом "token".
+	// Оба заданы → тула run_job принимает поле clone. Секрет монтируется ТОЛЬКО
+	// на клонер, основной контейнер кредов не видит.
+	CloneImage  string `env:"MCP_K8S_CLONE_IMAGE"`
+	CloneSecret string `env:"MCP_K8S_CLONE_SECRET"`
+
 	Kubeconfig string `env:"MCP_K8S_KUBECONFIG"`
 	AuthToken  string `env:"MCP_K8S_AUTH_TOKEN" mask:"filled"`
 }

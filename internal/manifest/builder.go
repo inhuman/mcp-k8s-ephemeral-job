@@ -14,12 +14,30 @@ import (
 const (
 	AppLabel       = "mcp-k8s-ephemeral-job"
 	workVolumeName = "work"
+	credsVolume    = "git-creds"
+	credsMount     = "/git-creds"
 	MainContainer  = "main"
 	ReaderSidecar  = "reader"
 	InjectInit     = "inject"
+	CloneInit      = "clone"
+	// TokenMask — чем заменяется реальный токен в origin URL после клона: видно, что
+	// auth был, но сам секрет не раскрыт.
+	TokenMask = "xxxxxxxxxxxx"
 	// ReadySentinel — файл, по появлению которого init-контейнер завершается и стартует основной.
 	ReadySentinel = ".runjob-ready"
 )
+
+// GitClone описывает клон репозитория init-контейнером. Креды видит ТОЛЬКО init
+// (секрет смонтирован лишь в его volumeMounts), основной контейнер их не видит —
+// разделение привилегий. После клона реальный токен в .git/config МАСКИРУЕТСЯ на
+// TokenMask (не удаляется): origin остаётся видимым, секрет — нет (Принцип VII).
+type GitClone struct {
+	RepoURL    string // https://host/path(.git) — БЕЗ токена, токен подставит init из секрета
+	Ref        string // ветка или sha
+	Subdir     string // подпапка в workdir, куда клонировать (напр. "src")
+	SecretName string // имя k8s-секрета с ключом "token"; монтируется ТОЛЬКО на init-клонер
+	Image      string // образ клонера (с git внутри)
+}
 
 // Params — примитивные параметры манифеста (без зависимости на другие internal-пакеты).
 type Params struct {
@@ -36,6 +54,7 @@ type Params struct {
 	Workdir  string
 	Timeout  time.Duration
 	HasFiles bool
+	Clone    *GitClone // если задан — init-контейнер клонирует репо до старта main
 }
 
 // Build детерминированно собирает Job из параметров (Принцип III: манифест строит сервер).
@@ -109,6 +128,32 @@ func Build(p Params) (*batchv1.Job, error) {
 		}}
 	}
 
+	// Клон репозитория: отдельный init-контейнер. Секрет с токеном смонтирован ТОЛЬКО на него —
+	// основной контейнер кредов не видит (разделение привилегий, Принцип VII).
+	if p.Clone != nil {
+		podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
+			Name: credsVolume,
+			VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+				SecretName: p.Clone.SecretName,
+			}},
+		})
+		podSpec.InitContainers = append(podSpec.InitContainers, corev1.Container{
+			Name:  CloneInit,
+			Image: p.Clone.Image,
+			Env: []corev1.EnvVar{
+				{Name: "REPO_URL", Value: p.Clone.RepoURL},
+				{Name: "REF", Value: p.Clone.Ref},
+				{Name: "DEST", Value: path.Join(workdir, p.Clone.Subdir)},
+			},
+			Command: []string{"sh", "-c", cloneScript},
+			VolumeMounts: []corev1.VolumeMount{
+				workMount,
+				{Name: credsVolume, MountPath: credsMount, ReadOnly: true},
+			},
+			SecurityContext: hardenedSecurityContext(),
+		})
+	}
+
 	backoff := int32(0)
 	completions := int32(1)
 	parallelism := int32(1)
@@ -135,6 +180,23 @@ func Build(p Params) (*batchv1.Job, error) {
 	}
 	return job, nil
 }
+
+// cloneScript клонирует REPO_URL@REF в DEST, используя токен из смонтированного
+// секрета, затем МАСКИРУЕТ токен в origin URL и убеждается, что реальный токен
+// нигде в .git не остался. REPO_URL/REF/DEST приходят как env (через "$VAR" —
+// без shell-инъекции). Токен читается из файла, в командную строку/историю не
+// попадает (auth через credential helper на одну команду).
+const cloneScript = `set -eu
+TOKEN="$(cat ` + credsMount + `/token)"
+# https://host/path -> host/path (для вставки basic-auth, надёжно для GitLab)
+HP="$(printf '%s' "$REPO_URL" | sed -e 's#^https://##' -e 's#^http://##')"
+git clone --branch "$REF" "https://oauth2:${TOKEN}@${HP}" "$DEST"
+# Маскируем токен в origin: видно, что auth был, но секрет скрыт. main стартует
+# ТОЛЬКО после успешного init, т.е. всегда видит уже замаскированный config.
+git -C "$DEST" remote set-url origin "https://oauth2:` + TokenMask + `@${HP}"
+# Контроль: реального токена не должно остаться нигде в .git.
+if grep -rqF "$TOKEN" "$DEST/.git" 2>/dev/null; then echo "FATAL: token leaked into .git" >&2; exit 1; fi
+echo "cloned $REPO_URL@$REF -> $DEST"`
 
 func hardenedSecurityContext() *corev1.SecurityContext {
 	return &corev1.SecurityContext{

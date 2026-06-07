@@ -19,6 +19,16 @@ type Input struct {
 	Limits   *ResourceLimits   `json:"limits,omitempty" jsonschema:"CPU/memory resource limits"`
 	TimeoutS int               `json:"timeout_s,omitempty" jsonschema:"wall-clock timeout in seconds"`
 	Workdir  string            `json:"workdir,omitempty" jsonschema:"working directory in the pod, default /work"`
+	Clone    *CloneInput       `json:"clone,omitempty" jsonschema:"optionally clone a git repo into the workdir before the command runs; the server injects credentials, you only give the url and ref"`
+}
+
+// CloneInput requests a git clone into the workdir before the command runs. The
+// server holds the credentials (the caller never sees or sends a token); only the
+// clone init-container sees them, the main container does not.
+type CloneInput struct {
+	RepoURL string `json:"repo_url" jsonschema:"https URL of the repo WITHOUT credentials, e.g. https://gitlab.example.com/group/repo.git"`
+	Ref     string `json:"ref" jsonschema:"branch name or commit sha to check out"`
+	Subdir  string `json:"subdir,omitempty" jsonschema:"subdirectory under the workdir to clone into, default 'repo'"`
 }
 
 type InputFile struct {

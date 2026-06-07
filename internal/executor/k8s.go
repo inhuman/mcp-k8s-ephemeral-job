@@ -25,6 +25,8 @@ type K8s struct {
 	rc           *rest.Config
 	ns           string
 	sidecarImage string
+	cloneImage   string
+	cloneSecret  string
 	ttl          int32
 	maxOutput    int64
 	maxArtifact  int64
@@ -35,6 +37,8 @@ type K8sOptions struct {
 	Kubeconfig   string
 	Namespace    string
 	SidecarImage string
+	CloneImage   string // образ init-клонера (с git); пусто = git-clone недоступен
+	CloneSecret  string // k8s-секрет с ключом "token" для клонера; пусто = git-clone недоступен
 	TTLSeconds   int32
 	MaxOutput    int64
 	MaxArtifact  int64
@@ -51,9 +55,13 @@ func NewK8s(opts K8sOptions, log *zap.Logger) (*K8s, error) {
 	}
 	return &K8s{
 		cs: cs, rc: rc, ns: opts.Namespace, sidecarImage: opts.SidecarImage,
+		cloneImage: opts.CloneImage, cloneSecret: opts.CloneSecret,
 		ttl: opts.TTLSeconds, maxOutput: opts.MaxOutput, maxArtifact: opts.MaxArtifact, log: log,
 	}, nil
 }
+
+// CloneEnabled reports whether git-clone is configured (image + secret set).
+func (k *K8s) CloneEnabled() bool { return k.cloneImage != "" && k.cloneSecret != "" }
 
 func restConfig(kubeconfig string) (*rest.Config, error) {
 	if kubeconfig != "" {
@@ -72,6 +80,19 @@ func restConfig(kubeconfig string) (*rest.Config, error) {
 
 func (k *K8s) Run(ctx context.Context, spec Spec) (Result, error) {
 	runID := newRunID()
+	var clone *manifest.GitClone
+	if spec.Clone != nil {
+		if !k.CloneEnabled() {
+			return Result{}, fmt.Errorf("git-clone requested but not configured on the server")
+		}
+		clone = &manifest.GitClone{
+			RepoURL:    spec.Clone.RepoURL,
+			Ref:        spec.Clone.Ref,
+			Subdir:     spec.Clone.Subdir,
+			SecretName: k.cloneSecret,
+			Image:      k.cloneImage,
+		}
+	}
 	job, err := manifest.Build(manifest.Params{
 		Namespace:    k.ns,
 		SidecarImage: k.sidecarImage,
@@ -85,6 +106,7 @@ func (k *K8s) Run(ctx context.Context, spec Spec) (Result, error) {
 		Workdir:      spec.Workdir,
 		Timeout:      spec.Timeout,
 		HasFiles:     len(spec.Files) > 0,
+		Clone:        clone,
 	})
 	if err != nil {
 		return Result{}, err

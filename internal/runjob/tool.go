@@ -97,6 +97,17 @@ func (t *Tool) Execute(ctx context.Context, in Input) (Output, error) {
 		Workdir: in.Workdir,
 		Timeout: time.Duration(timeoutS) * time.Second,
 	}
+	if in.Clone != nil {
+		subdir := in.Clone.Subdir
+		if subdir == "" {
+			subdir = "repo"
+		}
+		spec.Clone = &executor.CloneSpec{
+			RepoURL: in.Clone.RepoURL,
+			Ref:     in.Clone.Ref,
+			Subdir:  subdir,
+		}
+	}
 
 	res, err := t.exec.Run(ctx, spec)
 	if err != nil {

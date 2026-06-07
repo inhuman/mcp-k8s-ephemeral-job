@@ -2,6 +2,7 @@ package unit
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,5 +114,58 @@ func TestBuildInvalidQuantity(t *testing.T) {
 	p.CPU = "not-a-quantity"
 	if _, err := manifest.Build(p); err == nil {
 		t.Fatal("invalid cpu must error")
+	}
+}
+
+func TestBuildWithClone(t *testing.T) {
+	p := baseParams()
+	p.Clone = &manifest.GitClone{
+		RepoURL:    "https://gitlab.example.com/g/r.git",
+		Ref:        "feature-x",
+		Subdir:     "repo",
+		SecretName: "git-creds",
+		Image:      "alpine/git:2.45",
+	}
+	job, err := manifest.Build(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := job.Spec.Template.Spec
+
+	// Clone init-container present, using the clone image.
+	var clone *corev1.Container
+	for i := range spec.InitContainers {
+		if spec.InitContainers[i].Name == manifest.CloneInit {
+			clone = &spec.InitContainers[i]
+		}
+	}
+	if clone == nil {
+		t.Fatal("clone init-container missing")
+	}
+	if clone.Image != "alpine/git:2.45" {
+		t.Errorf("clone image = %q, want alpine/git:2.45", clone.Image)
+	}
+
+	// CRITICAL: creds secret is mounted ONLY on the clone init-container.
+	hasCreds := func(c corev1.Container) bool {
+		for _, m := range c.VolumeMounts {
+			if m.Name == "git-creds" {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasCreds(*clone) {
+		t.Error("clone container must mount git-creds")
+	}
+	for _, c := range spec.Containers {
+		if hasCreds(c) {
+			t.Errorf("main/sidecar container %q must NOT see git-creds (capability separation)", c.Name)
+		}
+	}
+
+	// Clone script masks the token in the origin url.
+	if !strings.Contains(clone.Command[len(clone.Command)-1], manifest.TokenMask) {
+		t.Error("clone script must mask the token in origin url")
 	}
 }

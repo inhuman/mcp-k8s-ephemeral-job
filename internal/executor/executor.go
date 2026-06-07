@@ -29,6 +29,16 @@ type Spec struct {
 	Memory  string
 	Workdir string
 	Timeout time.Duration
+	Clone   *CloneSpec // если задан — init-контейнер клонирует репо до старта main
+}
+
+// CloneSpec — запрос на клон репозитория init-контейнером (разделение привилегий:
+// креды видит только клонер). RepoURL/Ref приходят от вызывающего; SecretName и
+// Image — из конфига сервера, не от вызывающего.
+type CloneSpec struct {
+	RepoURL string
+	Ref     string
+	Subdir  string
 }
 
 type File struct {

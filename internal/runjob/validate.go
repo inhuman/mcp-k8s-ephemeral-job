@@ -45,6 +45,44 @@ func Validate(in Input, resolver *ImageResolver, maxTimeoutS int) error {
 		return fmt.Errorf("timeout_s %d exceeds max %d", in.TimeoutS, maxTimeoutS)
 	}
 
+	if in.Clone != nil {
+		if err := validateClone(in.Clone); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// shellMeta matches characters that could break out of a quoted shell value in
+// the clone script; repo_url/ref/subdir are caller-supplied and must be inert.
+var shellMeta = regexp.MustCompile("[`$;&|<>()\\\\\"'\n\r\t ]")
+
+func validateClone(c *CloneInput) error {
+	if !strings.HasPrefix(c.RepoURL, "https://") {
+		return fmt.Errorf("clone.repo_url must start with https://")
+	}
+	if strings.ContainsRune(c.RepoURL, '@') {
+		return fmt.Errorf("clone.repo_url must NOT contain credentials (no '@') — the server injects them")
+	}
+	if c.Ref == "" {
+		return fmt.Errorf("clone.ref is required")
+	}
+	for name, v := range map[string]string{"repo_url": c.RepoURL, "ref": c.Ref, "subdir": c.Subdir} {
+		// repo_url legitimately has no shell metas except the scheme's "//"; ref/subdir must be plain.
+		if name == "repo_url" {
+			if shellMeta.MatchString(strings.TrimPrefix(v, "https://")) {
+				return fmt.Errorf("clone.repo_url contains illegal characters")
+			}
+			continue
+		}
+		if v != "" && shellMeta.MatchString(v) {
+			return fmt.Errorf("clone.%s contains illegal shell characters", name)
+		}
+		if strings.Contains(v, "..") {
+			return fmt.Errorf("clone.%s must not contain ..", name)
+		}
+	}
 	return nil
 }
 
