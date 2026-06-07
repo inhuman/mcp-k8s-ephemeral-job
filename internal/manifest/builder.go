@@ -187,9 +187,13 @@ func Build(p Params) (*batchv1.Job, error) {
 // без shell-инъекции). Токен читается из файла, в командную строку/историю не
 // попадает (auth через credential helper на одну команду).
 const cloneScript = `set -eu
-TOKEN="$(cat ` + credsMount + `/token)"
 # https://host/path -> host/path (для вставки basic-auth, надёжно для GitLab)
 HP="$(printf '%s' "$REPO_URL" | sed -e 's#^https://##' -e 's#^http://##')"
+HOST="$(printf '%s' "$HP" | cut -d/ -f1)"
+# Токен выбирается по хосту: секрет содержит ключ на каждый GitLab-инстанс
+# (ключ = хост, значение = токен). Так клонер ходит на разные гитлабы с разными кредами.
+if [ ! -f "` + credsMount + `/$HOST" ]; then echo "FATAL: no credentials for host $HOST" >&2; exit 1; fi
+TOKEN="$(cat "` + credsMount + `/$HOST")"
 git clone --branch "$REF" "https://oauth2:${TOKEN}@${HP}" "$DEST"
 # Маскируем токен в origin: видно, что auth был, но секрет скрыт. main стартует
 # ТОЛЬКО после успешного init, т.е. всегда видит уже замаскированный config.

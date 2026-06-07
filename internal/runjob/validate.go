@@ -68,7 +68,12 @@ func validateClone(c *CloneInput) error {
 	if c.Ref == "" {
 		return fmt.Errorf("clone.ref is required")
 	}
+	// ".." is forbidden everywhere: the host derived from repo_url is used as a
+	// file path under the creds mount (/git-creds/<host>), so traversal must not slip in.
 	for name, v := range map[string]string{"repo_url": c.RepoURL, "ref": c.Ref, "subdir": c.Subdir} {
+		if strings.Contains(v, "..") {
+			return fmt.Errorf("clone.%s must not contain ..", name)
+		}
 		// repo_url legitimately has no shell metas except the scheme's "//"; ref/subdir must be plain.
 		if name == "repo_url" {
 			if shellMeta.MatchString(strings.TrimPrefix(v, "https://")) {
@@ -78,9 +83,6 @@ func validateClone(c *CloneInput) error {
 		}
 		if v != "" && shellMeta.MatchString(v) {
 			return fmt.Errorf("clone.%s contains illegal shell characters", name)
-		}
-		if strings.Contains(v, "..") {
-			return fmt.Errorf("clone.%s must not contain ..", name)
 		}
 	}
 	return nil
