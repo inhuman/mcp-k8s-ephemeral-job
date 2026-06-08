@@ -21,16 +21,18 @@ import (
 )
 
 type K8s struct {
-	cs           kubernetes.Interface
-	rc           *rest.Config
-	ns           string
-	sidecarImage string
-	cloneImage   string
-	cloneSecret  string
-	ttl          int32
-	maxOutput    int64
-	maxArtifact  int64
-	log          *zap.Logger
+	cs             kubernetes.Interface
+	rc             *rest.Config
+	ns             string
+	sidecarImage   string
+	cloneImage     string
+	cloneSecret    string
+	cachePVC       string
+	cacheMountPath string
+	ttl            int32
+	maxOutput      int64
+	maxArtifact    int64
+	log            *zap.Logger
 }
 
 type K8sOptions struct {
@@ -39,9 +41,13 @@ type K8sOptions struct {
 	SidecarImage string
 	CloneImage   string // образ init-клонера (с git); пусто = git-clone недоступен
 	CloneSecret  string // k8s-секрет с ключом "token" для клонера; пусто = git-clone недоступен
-	TTLSeconds   int32
-	MaxOutput    int64
-	MaxArtifact  int64
+	// CachePVC + CacheMountPath: оба заданы — PVC монтируется в main+reader на
+	// CacheMountPath (типично /go/pkg/mod для Go-modulecache). Пусто = без кеша.
+	CachePVC       string
+	CacheMountPath string
+	TTLSeconds     int32
+	MaxOutput      int64
+	MaxArtifact    int64
 }
 
 func NewK8s(opts K8sOptions, log *zap.Logger) (*K8s, error) {
@@ -56,6 +62,7 @@ func NewK8s(opts K8sOptions, log *zap.Logger) (*K8s, error) {
 	return &K8s{
 		cs: cs, rc: rc, ns: opts.Namespace, sidecarImage: opts.SidecarImage,
 		cloneImage: opts.CloneImage, cloneSecret: opts.CloneSecret,
+		cachePVC: opts.CachePVC, cacheMountPath: opts.CacheMountPath,
 		ttl: opts.TTLSeconds, maxOutput: opts.MaxOutput, maxArtifact: opts.MaxArtifact, log: log,
 	}, nil
 }
@@ -93,6 +100,10 @@ func (k *K8s) Run(ctx context.Context, spec Spec) (Result, error) {
 			Image:      k.cloneImage,
 		}
 	}
+	var cache *manifest.Cache
+	if k.cachePVC != "" && k.cacheMountPath != "" {
+		cache = &manifest.Cache{PVCName: k.cachePVC, MountPath: k.cacheMountPath}
+	}
 	job, err := manifest.Build(manifest.Params{
 		Namespace:    k.ns,
 		SidecarImage: k.sidecarImage,
@@ -107,6 +118,7 @@ func (k *K8s) Run(ctx context.Context, spec Spec) (Result, error) {
 		Timeout:      spec.Timeout,
 		HasFiles:     len(spec.Files) > 0,
 		Clone:        clone,
+		Cache:        cache,
 	})
 	if err != nil {
 		return Result{}, err

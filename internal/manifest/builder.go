@@ -16,6 +16,7 @@ const (
 	workVolumeName = "work"
 	credsVolume    = "git-creds"
 	credsMount     = "/git-creds"
+	cacheVolume    = "cache"
 	MainContainer  = "main"
 	ReaderSidecar  = "reader"
 	InjectInit     = "inject"
@@ -55,6 +56,17 @@ type Params struct {
 	Timeout  time.Duration
 	HasFiles bool
 	Clone    *GitClone // если задан — init-контейнер клонирует репо до старта main
+	Cache    *Cache    // если задан — PVC монтируется в main+reader на CacheMountPath
+}
+
+// Cache — постоянный том, который монтируется во все основные/sidecar контейнеры
+// пода (но НЕ в init-clone — кешировать нечего, плюс минимизируем поверхность
+// записи кредов в чужой volume). Типовое применение — Go module cache
+// (/go/pkg/mod): первый прогон скачивает зависимости, последующие читают из PVC.
+// PVC должен существовать в namespace до старта (создаётся через helm/manifest).
+type Cache struct {
+	PVCName   string
+	MountPath string
 }
 
 // Build детерминированно собирает Job из параметров (Принцип III: манифест строит сервер).
@@ -75,6 +87,15 @@ func Build(p Params) (*batchv1.Job, error) {
 
 	labels := map[string]string{"app": AppLabel, "run-id": p.RunID}
 	workMount := corev1.VolumeMount{Name: workVolumeName, MountPath: workdir}
+	// mainMounts — то, что монтируется в main+reader. Cache (если задан) живёт
+	// рядом с workdir, чтобы между прогонами выживал.
+	mainMounts := []corev1.VolumeMount{workMount}
+	if p.Cache != nil && p.Cache.PVCName != "" && p.Cache.MountPath != "" {
+		mainMounts = append(mainMounts, corev1.VolumeMount{
+			Name:      cacheVolume,
+			MountPath: p.Cache.MountPath,
+		})
+	}
 
 	env := make([]corev1.EnvVar, 0, len(p.Env))
 	for k, v := range p.Env {
@@ -87,7 +108,7 @@ func Build(p Params) (*batchv1.Job, error) {
 		Command:         p.Command,
 		Env:             env,
 		WorkingDir:      workdir,
-		VolumeMounts:    []corev1.VolumeMount{workMount},
+		VolumeMounts:    mainMounts,
 		SecurityContext: hardenedSecurityContext(),
 		Resources: corev1.ResourceRequirements{
 			Limits: corev1.ResourceList{
@@ -102,17 +123,29 @@ func Build(p Params) (*batchv1.Job, error) {
 		Name:            ReaderSidecar,
 		Image:           p.SidecarImage,
 		Command:         []string{"sleep", fmt.Sprintf("%d", deadline+60)},
-		VolumeMounts:    []corev1.VolumeMount{workMount},
+		VolumeMounts:    mainMounts,
 		SecurityContext: hardenedSecurityContext(),
+	}
+
+	podVolumes := []corev1.Volume{{
+		Name:         workVolumeName,
+		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+	}}
+	if p.Cache != nil && p.Cache.PVCName != "" && p.Cache.MountPath != "" {
+		podVolumes = append(podVolumes, corev1.Volume{
+			Name: cacheVolume,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: p.Cache.PVCName,
+				},
+			},
+		})
 	}
 
 	podSpec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
-		Volumes: []corev1.Volume{{
-			Name:         workVolumeName,
-			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-		}},
-		Containers: []corev1.Container{main, reader},
+		Volumes:       podVolumes,
+		Containers:    []corev1.Container{main, reader},
 	}
 
 	// Инъекция входных файлов: init-контейнер держит /work, ждёт sentinel; сервер заливает файлы

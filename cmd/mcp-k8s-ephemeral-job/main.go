@@ -41,14 +41,16 @@ func run(log *zap.Logger) error {
 	}
 
 	exec, err := executor.NewK8s(executor.K8sOptions{
-		Kubeconfig:   cfg.Kubeconfig,
-		Namespace:    cfg.Namespace,
-		SidecarImage: cfg.SidecarImage,
-		CloneImage:   cfg.CloneImage,
-		CloneSecret:  cfg.CloneSecret,
-		TTLSeconds:   jobTTLSeconds,
-		MaxOutput:    cfg.MaxOutputBytes,
-		MaxArtifact:  cfg.MaxArtifactBytes,
+		Kubeconfig:     cfg.Kubeconfig,
+		Namespace:      cfg.Namespace,
+		SidecarImage:   cfg.SidecarImage,
+		CloneImage:     cfg.CloneImage,
+		CloneSecret:    cfg.CloneSecret,
+		CachePVC:       cfg.CachePVC,
+		CacheMountPath: cfg.CacheMountPath,
+		TTLSeconds:     jobTTLSeconds,
+		MaxOutput:      cfg.MaxOutputBytes,
+		MaxArtifact:    cfg.MaxArtifactBytes,
 	}, log)
 	if err != nil {
 		return err

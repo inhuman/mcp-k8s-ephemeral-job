@@ -33,6 +33,15 @@ type Config struct {
 
 	Kubeconfig string `env:"MCP_K8S_KUBECONFIG"`
 	AuthToken  string `env:"MCP_K8S_AUTH_TOKEN" mask:"filled"`
+
+	// Persistent cache volume mounted into every ephemeral pod (main + sidecar).
+	// Both fields must be set together; either empty → no cache mount.
+	// Typical use: Go module cache. CachePVC=jarvis-go-modcache,
+	// CacheMountPath=/go/pkg/mod → all pods share the downloaded modules.
+	// The PVC itself is provisioned out-of-band (helm chart / manifest), the
+	// server only references it by name.
+	CachePVC       string `env:"MCP_K8S_CACHE_PVC"`
+	CacheMountPath string `env:"MCP_K8S_CACHE_MOUNT_PATH"`
 }
 
 func Load() (Config, error) {
