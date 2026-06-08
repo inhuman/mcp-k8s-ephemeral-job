@@ -12,6 +12,7 @@ import (
 	"github.com/inhuman/mcp-k8s-ephemeral-job/internal/manifest"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -58,6 +59,32 @@ func NewK8s(opts K8sOptions, log *zap.Logger) (*K8s, error) {
 	cs, err := kubernetes.NewForConfig(rc)
 	if err != nil {
 		return nil, fmt.Errorf("build clientset: %w", err)
+	}
+	// Fail-fast on misconfigured cache. If a CachePVC is named, verify it
+	// actually exists in the namespace BEFORE the server starts accepting
+	// run_job calls. Otherwise every pod silently pends with "unbound PVC"
+	// and the caller sees an opaque timeout. CrashLoopBackOff with this
+	// error in logs is far better feedback than that. Half-config (only one
+	// of the two fields) is also a misconfig and rejected here.
+	cacheNamed := opts.CachePVC != "" || opts.CacheMountPath != ""
+	cacheComplete := opts.CachePVC != "" && opts.CacheMountPath != ""
+	if cacheNamed && !cacheComplete {
+		return nil, fmt.Errorf("cache misconfigured: both MCP_K8S_CACHE_PVC and MCP_K8S_CACHE_MOUNT_PATH must be set (got pvc=%q mount=%q)", opts.CachePVC, opts.CacheMountPath)
+	}
+	if cacheComplete {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err := cs.CoreV1().PersistentVolumeClaims(opts.Namespace).Get(ctx, opts.CachePVC, metav1.GetOptions{})
+		switch {
+		case err == nil:
+			log.Info("cache pvc verified", zap.String("namespace", opts.Namespace), zap.String("pvc", opts.CachePVC), zap.String("mount", opts.CacheMountPath))
+		case apierrors.IsNotFound(err):
+			return nil, fmt.Errorf("cache pvc %q not found in namespace %q (set MCP_K8S_CACHE_PVC=\"\" to disable cache, or create the PVC first)", opts.CachePVC, opts.Namespace)
+		case apierrors.IsForbidden(err):
+			return nil, fmt.Errorf("cache pvc %q exists check forbidden in namespace %q (RBAC: need get persistentvolumeclaims): %w", opts.CachePVC, opts.Namespace, err)
+		default:
+			return nil, fmt.Errorf("verify cache pvc %q in namespace %q: %w", opts.CachePVC, opts.Namespace, err)
+		}
 	}
 	return &K8s{
 		cs: cs, rc: rc, ns: opts.Namespace, sidecarImage: opts.SidecarImage,
