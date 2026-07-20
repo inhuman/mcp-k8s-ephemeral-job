@@ -1,0 +1,78 @@
+# IDE директории
+.idea/
+.vscode/
+
+# Переменные окружения
+.env
+.env.local
+*.env
+docker/.env
+
+# Бинарники
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Ad-hoc shell helpers in repo root (proper scripts live under scripts/)
+/*.sh
+
+# Go vendoring
+go.work
+go.work.sum
+
+# Тестовые артефакты
+*.out
+coverage.*
+*.test
+
+# Vendor всегда коммитим целиком
+!vendor/**
+
+# Временные файлы OS
+.DS_Store
+Thumbs.db
+
+.claude
+.specify
+specs
+.cursor
+.cursorignore
+.cursorindexingignore
+.cursorrules
+.github/copilot-instructions.md
+.copilot
+.codeium
+.codeiumignore
+.windsurf
+.windsurfrules
+.aider*
+.continue
+.continuerc.json
+.gemini
+.dispatch
+.kiro
+.kilocode
+AGENTS.md
+GEMINI.md
+COPILOT.md
+CLAUDE.md
+
+# Qwen / other AI tools
+.qwen
+.qwenignore
+QWEN.md
+/test.json
+
+# Local dev scripts (only root-level)
+/scripts/
+
+# Plans and notes
+PLAN.md
+PLAN.done.md
+
+# Test documents (only inside tests/)
+tests/**/*.docx
+tests/**/*.pptx
+tests/**/*.xlsx
+tests/**/*.pdf
