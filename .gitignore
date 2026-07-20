@@ -76,3 +76,6 @@ tests/**/*.docx
 tests/**/*.pptx
 tests/**/*.xlsx
 tests/**/*.pdf
+
+# Local-only git hooks (contain a specific private e-mail address)
+.githooks/
