@@ -3,6 +3,7 @@
 **English** | [Русский](README.ru.md)
 
 [![Version](https://img.shields.io/github/v/tag/inhuman/mcp-k8s-ephemeral-job?sort=semver&style=flat-square&label=version)](https://github.com/inhuman/mcp-k8s-ephemeral-job/tags)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.inhuman%2Fmcp--k8s--ephemeral--job-blue?style=flat-square)](https://registry.modelcontextprotocol.io)
 [![Docker Pulls](https://img.shields.io/docker/pulls/idconstruct/mcp-k8s-ephemeral-job?style=flat-square&logo=docker)](https://hub.docker.com/r/idconstruct/mcp-k8s-ephemeral-job)
 [![Docker Image Version](https://img.shields.io/docker/v/idconstruct/mcp-k8s-ephemeral-job?sort=semver&style=flat-square&logo=docker&label=image)](https://hub.docker.com/r/idconstruct/mcp-k8s-ephemeral-job/tags)
 [![Build](https://img.shields.io/github/actions/workflow/status/inhuman/mcp-k8s-ephemeral-job/docker-publish.yml?style=flat-square&logo=github)](https://github.com/inhuman/mcp-k8s-ephemeral-job/actions/workflows/docker-publish.yml)
